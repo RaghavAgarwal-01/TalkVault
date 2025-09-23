@@ -1,0 +1,35 @@
+# Create sample transcript data
+sample_transcript = '''Meeting Transcript: Weekly Team Standup
+Date: September 22, 2025
+Attendees: John Smith, Sarah Wilson, Mike Chen, Lisa Garcia
+
+John: Good morning everyone. Let's start with our weekly standup. Sarah, can you give us an update on the user authentication module?
+
+Sarah: Sure! I've completed the login and signup functionality. The JWT implementation is working properly, and I've added password hashing with bcrypt. I need to finish the password reset feature by Friday. Can someone help me with the email service integration?
+
+Mike: I can help you with that, Sarah. I've been working on the email service for notifications. We should have it ready by Thursday. 
+
+John: Great! Mike, what's your update?
+
+Mike: I've been working on the NLP pipeline. The text summarization is working well using the TextRank algorithm. I've also implemented basic action item extraction, but I need to improve the accuracy. The current implementation detects about 70% of action items correctly. I plan to enhance this by adding more sophisticated NER models by next week.
+
+Lisa: That sounds good, Mike. I've been working on the frontend components. The upload interface is complete, and users can now upload both text files and audio files. The progress indicators are working, and the results display is responsive. However, I noticed we need to handle error states better. John, should I prioritize that over the export functionality?
+
+John: Let's focus on the export functionality first. We need PDF and JSON export working for the demo next week. Lisa, can you have that ready by Wednesday?
+
+Lisa: Yes, I'll have the export features completed by Wednesday. I'll also add proper error handling by Thursday.
+
+John: Perfect. So to summarize our action items:
+- Sarah will complete password reset by Friday
+- Mike will help Sarah with email integration by Thursday  
+- Mike will enhance action item extraction accuracy by next week
+- Lisa will implement export functionality by Wednesday
+- Lisa will add better error handling by Thursday
+
+Meeting ends at 10:30 AM.
+'''
+
+with open('nlp/data/transcripts/sample_meeting.txt', 'w') as f:
+    f.write(sample_transcript)
+
+print("Created sample transcript")
