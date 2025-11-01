@@ -47,7 +47,7 @@ async def create_meeting(
     meeting_dict = {
         "title": meeting.title,
         "description": meeting.description,
-        "organizer_id": str(current_user.id),
+        "organizer_id": str(current_user["_id"]),
         "participants": [p.dict() for p in participants],
         "scheduled_time": meeting.scheduled_time,
         "duration_minutes": meeting.duration_minutes,
@@ -75,7 +75,7 @@ async def get_meetings(
     meetings_collection = get_meetings_collection()
     
     # Filter for meetings where user is organizer or participant
-    user_id_str = str(current_user.id)
+    user_id_str = str(current_user["_id"])
     filter_query = {
         "$or": [
             {"organizer_id": user_id_str},
@@ -115,7 +115,7 @@ async def get_meeting(
         )
     
     # Check if user has access to this meeting
-    user_id_str = str(current_user.id)
+    user_id_str = str(current_user["_id"])
     if (meeting["organizer_id"] != user_id_str and 
         not any(p["user_id"] == user_id_str for p in meeting.get("participants", []))):
         raise HTTPException(
@@ -148,7 +148,7 @@ async def update_meeting(
         )
     
     # Check if user is organizer
-    if meeting["organizer_id"] != str(current_user.id):
+    if meeting["organizer_id"] != str(current_user["_id"]):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only meeting organizer can update the meeting"
@@ -207,7 +207,7 @@ async def delete_meeting(
         )
     
     # Check if user is organizer
-    if meeting["organizer_id"] != str(current_user.id):
+    if meeting["organizer_id"] != str(current_user["_id"]):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only meeting organizer can delete the meeting"

@@ -1,195 +1,150 @@
-// frontend/src/pages/Documents.jsx
+import React, { useState } from "react";
+import "./Documents.css";
+import { useAuth } from "../context/AuthContext";
+import api from "../services/api"; // ✅ your configured Axios instance
 
-import React, { useState, useEffect } from 'react'
-import api from '../services/api'
+function Documents() {
+  const { user } = useAuth();
+  const [file, setFile] = useState(null);
+  const [text, setText] = useState("");
+  const [summary, setSummary] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-const Documents = () => {
-  const [documents, setDocuments] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [uploadForm, setUploadForm] = useState({
-    title: '',
-    description: '',
-    tags: ''
-  })
+  const handleGenerate = async () => {
+    if (!file && !text.trim()) {
+      setError("Please provide text or upload an audio file");
+      return;
+    }
 
-  useEffect(() => {
-    fetchDocuments()
-  }, [])
+    setLoading(true);
+    setError("");
+    setSummary("");
 
-  const fetchDocuments = async () => {
     try {
-      const response = await api.get('/documents')
-      setDocuments(response.data)
-    } catch (error) {
-      console.error('Failed to fetch documents:', error)
+      const formData = new FormData();
+
+      if (file) {
+        formData.append("audio_file", file);
+      } else {
+        formData.append("transcript", text);
+      }
+
+      const response = await api.post("/api/summarizer/generate", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      console.log("🧾 Full response:", response.data);
+
+      const summaryText =
+        response.data.summary || response.data.data?.summary || "";
+
+      if (summaryText) {
+        setSummary(summaryText);
+      } else {
+        console.warn("⚠️ No summary found in response:", response.data);
+        setError("No summary returned from server.");
+      }
+    } catch (err) {
+      console.error("Summary generation error:", err);
+      setError("Failed to generate summary. Check console for details.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const handleFileSelect = (e) => {
-    setSelectedFile(e.target.files[0])
-  }
-
-  const handleUploadFormChange = (e) => {
-    setUploadForm({
-      ...uploadForm,
-      [e.target.name]: e.target.value
-    })
-  }
-
-  const handleUpload = async (e) => {
-    e.preventDefault()
-    if (!selectedFile) return
-
-    setUploading(true)
-    try {
-      const formData = new FormData()
-      formData.append('file', selectedFile)
-      if (uploadForm.title) formData.append('title', uploadForm.title)
-      if (uploadForm.description) formData.append('description', uploadForm.description)
-      if (uploadForm.tags) formData.append('tags', uploadForm.tags)
-
-      await api.post('/documents/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      })
-
-      setSelectedFile(null)
-      setUploadForm({ title: '', description: '', tags: '' })
-      fetchDocuments()
-    } catch (error) {
-      console.error('Failed to upload document:', error)
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const handleDownload = async (documentId, filename) => {
-    try {
-      const response = await api.get(`/documents/${documentId}/download`, {
-        responseType: 'blob',
-      })
-      
-      const url = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', filename)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-    } catch (error) {
-      console.error('Failed to download document:', error)
-    }
-  }
-
-  if (loading) {
-    return <div className="loading">Loading documents...</div>
-  }
+  const handleReset = () => {
+    setFile(null);
+    setText("");
+    setSummary("");
+    setError("");
+  };
 
   return (
-    <div className="documents-page">
-      <div className="page-header">
-        <h1>Documents</h1>
+    <div className="documents">
+      <h2>Meeting Summarizer</h2>
+
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Paste or upload meeting audio..."
+        style={{
+          width: "100%",
+          height: "150px",
+          padding: "10px",
+          borderRadius: "8px",
+          border: "1px solid #ccc",
+          backgroundColor: "#fff",
+          color: "#000",
+          fontSize: "16px",
+          marginBottom: "10px",
+        }}
+      />
+
+      <input
+        type="file"
+        accept="audio/*"
+        onChange={(e) => setFile(e.target.files[0])}
+        style={{ marginBottom: "10px" }}
+      />
+
+      <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+        <button
+          onClick={handleGenerate}
+          disabled={loading}
+          style={{
+            backgroundColor: "#00bcd4",
+            color: "#fff",
+            padding: "8px 16px",
+            borderRadius: "6px",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          {loading ? "Generating..." : "Generate Summary"}
+        </button>
+        <button
+          onClick={handleReset}
+          style={{
+            backgroundColor: "#555",
+            color: "#fff",
+            padding: "8px 16px",
+            borderRadius: "6px",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Reset
+        </button>
       </div>
 
-      <div className="upload-section">
-        <h2>Upload Document</h2>
-        <form onSubmit={handleUpload} className="upload-form">
-          <div className="form-group">
-            <label htmlFor="file">Choose File</label>
-            <input
-              type="file"
-              id="file"
-              onChange={handleFileSelect}
-              accept=".pdf,.doc,.docx,.txt,.mp3,.wav,.mp4"
-              required
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="title">Title (optional)</label>
-            <input
-              type="text"
-              id="title"
-              name="title"
-              value={uploadForm.title}
-              onChange={handleUploadFormChange}
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="description">Description (optional)</label>
-            <textarea
-              id="description"
-              name="description"
-              value={uploadForm.description}
-              onChange={handleUploadFormChange}
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="tags">Tags (comma-separated)</label>
-            <input
-              type="text"
-              id="tags"
-              name="tags"
-              value={uploadForm.tags}
-              onChange={handleUploadFormChange}
-              placeholder="important, meeting, notes"
-            />
-          </div>
-          
-          <button type="submit" disabled={uploading} className="primary-button">
-            {uploading ? 'Uploading...' : 'Upload Document'}
-          </button>
-        </form>
-      </div>
+      {error && <p style={{ color: "red" }}>{error}</p>}
 
-      <div className="documents-grid">
-        {documents.length > 0 ? (
-          documents.map((document) => (
-            <div key={document.id} className="document-card">
-              <h3>{document.title || document.original_filename}</h3>
-              <p>{document.description}</p>
-              <div className="document-info">
-                <span>Type: {document.file_type}</span>
-                <span>Size: {Math.round(document.file_size / 1024)} KB</span>
-                <span>Uploaded: {new Date(document.created_at).toLocaleDateString()}</span>
-              </div>
-              <div className="document-status">
-                <span className={`status ${document.processing_status}`}>
-                  {document.processing_status}
-                </span>
-              </div>
-              {document.tags.length > 0 && (
-                <div className="document-tags">
-                  {document.tags.map((tag, index) => (
-                    <span key={index} className="tag">{tag}</span>
-                  ))}
-                </div>
-              )}
-              <div className="document-actions">
-                <button
-                  onClick={() => handleDownload(document.id, document.original_filename)}
-                  className="secondary-button"
-                >
-                  Download
-                </button>
-              </div>
-            </div>
-          ))
+      <div className="summary-box">
+        <h3>Generated Summary:</h3>
+        {loading ? (
+          <p>Generating summary...</p>
+        ) : summary ? (
+          <textarea
+            readOnly
+            value={summary}
+            style={{
+              width: "100%",
+              height: "200px",
+              padding: "10px",
+              borderRadius: "8px",
+              border: "1px solid #ccc",
+              backgroundColor: "#fff",
+              color: "#000",
+              fontSize: "16px",
+            }}
+          />
         ) : (
-          <div className="no-documents">
-            <p>No documents yet. Upload your first document!</p>
-          </div>
+          <p style={{ color: "#888" }}>Your summary will appear here...</p>
         )}
       </div>
     </div>
-  )
+  );
 }
 
-export default Documents
+export default Documents;

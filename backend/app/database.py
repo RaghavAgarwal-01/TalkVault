@@ -1,47 +1,58 @@
-# backend/app/database.py
-
+from pymongo import MongoClient
+from dotenv import load_dotenv
+import os
 from motor.motor_asyncio import AsyncIOMotorClient
-from app.config import settings
-import logging
+from pymongo.collection import Collection
 
-logger = logging.getLogger(__name__)
+MONGO_URI = "mongodb://localhost:27017"
+DB_NAME = "talkvault"
 
-class MongoDB:
-    client: AsyncIOMotorClient = None
-    database = None
+client: AsyncIOMotorClient | None = None
+db = None
 
-db = MongoDB()
+load_dotenv()
 
-async def connect_to_db():
-    """Create database connection"""
-    try:
-        db.client = AsyncIOMotorClient(settings.MONGODB_URL)
-        db.database = db.client[settings.DATABASE_NAME]
-        
-        # Test the connection
-        await db.client.admin.command('ismaster')
-        logger.info(f"Connected to MongoDB at {settings.MONGODB_URL}")
-        
-    except Exception as e:
-        logger.error(f"Could not connect to MongoDB: {e}")
-        raise e
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 
-async def close_db_connection():
-    """Close database connection"""
-    if db.client:
-        db.client.close()
-        logger.info("Disconnected from MongoDB")
+client = MongoClient(MONGO_URI)
+db = client["talkvault"]
+async def connect_to_mongo():
+    global client, db
+    client = AsyncIOMotorClient(MONGO_URI)
+    db = client[DB_NAME]
+    print("✅ Connected to MongoDB")
 
-def get_database():
-    """Get database instance"""
-    return db.database
 
-# Collection getters
+# ✅ Disconnect from MongoDB
+async def close_mongo_connection():
+    global client
+    if client:
+        client.close()
+        print("❌ MongoDB connection closed")
+
+
+# ✅ Get documents collection
+def get_documents_collection() -> Collection:
+    global db
+    if db is None:
+        raise RuntimeError("Database connection not initialized. Call connect_to_mongo() first.")
+    return db["documents"]
 def get_users_collection():
-    return db.database.users
+    if db is None:
+        raise ConnectionError("❌ MongoDB not connected yet.")
+    return db["users"]
 
 def get_meetings_collection():
-    return db.database.meetings
+    if db is None:
+        raise ConnectionError("❌ MongoDB not connected yet.")
+    return db["meetings"]
 
 def get_documents_collection():
-    return db.database.documents
+    if db is None:
+        raise ConnectionError("❌ MongoDB not connected yet.")
+    return db["documents"]
+
+def get_summaries_collection():
+    if db is None:
+        raise ConnectionError("❌ MongoDB not connected yet.")
+    return db["summaries"]

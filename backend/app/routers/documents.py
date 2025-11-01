@@ -8,7 +8,10 @@ from datetime import datetime
 import os
 import uuid
 import mimetypes
-
+from app.summarizer import summarizer, detect_pii, encrypt_pii_in_text, fernet
+from fastapi import BackgroundTasks
+from app.database import get_summaries_collection
+from bson import ObjectId
 from app.config import settings
 from app.database import get_documents_collection
 from app.models.document import DocumentCreate, DocumentUpdate, DocumentResponse, DocumentSearch, DocumentType, ProcessingStatus
@@ -16,7 +19,81 @@ from app.models.user import User
 from app.routers.auth import get_current_user
 
 router = APIRouter()
+# --- new helper to transcribe audio file (simple ffmpeg/pydub placeholder) ---
+async def transcribe_audio_file(file_path: str) -> str:
+    """If audio is uploaded, convert/transcribe. This is a placeholder — integrate your speech-to-text service here (Whisper/AssemblyAI/Google)."""
+    # For now we just return placeholder text when audio present
+    # Replace with real transcription logic
+    return "[TRANSCRIPT_PLACEHOLDER] — integrate real STT service for audio files."
 
+
+
+
+# --- endpoint: generate summary ---
+@router.post("/{document_id}/summarize")
+async def generate_summary_for_document(document_id: str, background_tasks: BackgroundTasks, current_user: User = Depends(get_current_user)):
+    docs_col = get_documents_collection()
+    summaries_col = get_summaries_collection()
+
+
+    doc = await docs_col.find_one({"_id": ObjectId(document_id), "owner_id": ObjectId(current_user["_id"])})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+
+    content = doc.get('text_content')
+    # if text_content missing and it's audio, try to transcribe
+    if not content and doc.get('file_type') == 'AUDIO':
+        file_path = os.path.join('uploads', doc['storage_filename'])
+        content = await transcribe_audio_file(file_path)
+
+
+    if not content:
+        raise HTTPException(status_code=400, detail='No textual content available for summarization')
+
+
+    # Detect and encrypt PII before sending to external API (if you want to avoid sending real PII)
+    encrypted_text, mapping = encrypt_pii_in_text(content)
+
+
+    # Generate summary synchronously here (could be background task). The system instructions forbid async background replies, so return result now.
+    try:
+        summary = summarizer.summarize(encrypted_text)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Summarization failed: {e}")
+
+
+    # store summary
+    summary_doc = {
+        'document_id': ObjectId(document_id),
+        'owner_id': ObjectId(current_user["_id"]),
+        'summary_text': summary['text'],
+        'model': summary.get('model'),
+        'pii_mapping': mapping,
+        'created_at': summary.get('created_at'),
+        }
+    res = await summaries_col.insert_one(summary_doc)
+
+
+    return {'id': str(res.inserted_id), 'summary_text': summary['text'], 'pii_mapping': mapping}
+
+
+
+
+# --- endpoint: list summaries for a document ---
+@router.get("/{document_id}/summaries")
+async def list_summaries_for_document(document_id: str, current_user: User = Depends(get_current_user)):
+    summaries_col = get_summaries_collection()
+    cursor = summaries_col.find({'document_id': ObjectId(document_id), 'owner_id': ObjectId(current_user["_id"])}).sort('created_at', -1)
+    items = []
+    async for s in cursor:
+        items.append({
+            'id': str(s['_id']),
+            'summary_text': s['summary_text'],
+            'model': s.get('model'),
+            'created_at': s.get('created_at')
+        })
+    return items
 def get_document_type(filename: str) -> DocumentType:
     """Determine document type based on file extension"""
     ext = os.path.splitext(filename)[1].lower()
@@ -104,7 +181,7 @@ async def upload_document(
             "file_size": file_size,
             "file_type": get_document_type(file.filename),
             "mime_type": mime_type,
-            "owner_id": str(current_user.id),
+            "owner_id": str(current_user["_id"]),
             "meeting_id": meeting_id,
             "title": title or file.filename,
             "description": description,
@@ -146,7 +223,7 @@ async def get_documents(
     # Base filter: user's documents or public documents
     filter_query = {
         "$or": [
-            {"owner_id": str(current_user.id)},
+            {"owner_id": str(current_user["_id"])},
             {"is_public": True}
         ]
     }
@@ -186,7 +263,7 @@ async def get_document(
         )
     
     # Check if user has access
-    if document["owner_id"] != str(current_user.id) and not document.get("is_public", False):
+    if document["owner_id"] != str(current_user["_id"]) and not document.get("is_public", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied to this document"
@@ -216,7 +293,7 @@ async def download_document(
         )
     
     # Check if user has access
-    if document["owner_id"] != str(current_user.id) and not document.get("is_public", False):
+    if document["owner_id"] != str(current_user["_id"]) and not document.get("is_public", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied to this document"
@@ -258,7 +335,7 @@ async def update_document(
         )
     
     # Check if user is owner
-    if document["owner_id"] != str(current_user.id):
+    if document["owner_id"] != str(current_user["_id"]):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only document owner can update the document"
@@ -317,7 +394,7 @@ async def delete_document(
         )
     
     # Check if user is owner
-    if document["owner_id"] != str(current_user.id):
+    if document["owner_id"] != str(current_user["_id"]):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only document owner can delete the document"
@@ -345,7 +422,7 @@ async def search_documents(
     # Base filter: user's documents or public documents
     filter_query = {
         "$or": [
-            {"owner_id": str(current_user.id)},
+            {"owner_id": str(current_user["_id"])},
             {"is_public": True}
         ]
     }
