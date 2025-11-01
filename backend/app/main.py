@@ -7,7 +7,7 @@ import uvicorn
 
 from app.config import settings
 from app.database import connect_to_db, close_db_connection
-from app.routers import auth, users, meetings, documents
+from app.routers import auth, users, meetings, documents, summarizer
 
 app = FastAPI(
     title="TalkVault API",
@@ -15,9 +15,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware
-from fastapi.middleware.cors import CORSMiddleware
-
+# ✅ CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -29,17 +27,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# Static files
+# ✅ Mount uploads folder
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
+# ✅ Include routers with consistent prefix
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(meetings.router, prefix="/api/meetings", tags=["meetings"])
 app.include_router(documents.router, prefix="/api/documents", tags=["documents"])
+app.include_router(summarizer.router, prefix="/api", tags=["summarizer"])
 
-# Startup and shutdown events
+
+# ✅ Startup & shutdown events
 @app.on_event("startup")
 async def startup_event():
     await connect_to_db()

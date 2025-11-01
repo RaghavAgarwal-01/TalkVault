@@ -1,31 +1,19 @@
-// frontend/src/services/api.js
-
 import axios from 'axios'
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api'
+// Keep API_BASE_URL pointed at /api for auth, documents, etc.
+const API_BASE_URL = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000/api'
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 })
 
-// Request interceptor to add auth token
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  (error) => {
-    return Promise.reject(error)
-  }
-)
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token')
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
 
-// Response interceptor to handle errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -37,4 +25,8 @@ api.interceptors.response.use(
   }
 )
 
-export default api
+// Keep these single-line, no newline inside template string
+const generateSummary = (documentId) => api.post(`/documents/${documentId}/summarize`)
+const getSummaries = (documentId) => api.get(`/documents/${documentId}/summaries`)
+
+export default Object.assign(api, { generateSummary, getSummaries })

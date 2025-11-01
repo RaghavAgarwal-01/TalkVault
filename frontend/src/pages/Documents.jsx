@@ -1,195 +1,121 @@
-// frontend/src/pages/Documents.jsx
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import "./Documents.css";
+import { useAuth } from "../context/AuthContext";
 
-import React, { useState, useEffect } from 'react'
-import api from '../services/api'
+const API_URL = "http://127.0.0.1:8000/summarizer";
 
-const Documents = () => {
-  const [documents, setDocuments] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [uploadForm, setUploadForm] = useState({
-    title: '',
-    description: '',
-    tags: ''
-  })
+function Documents() {
+  const { user } = useAuth();
+  const username = user?.username || localStorage.getItem("username");
 
-  useEffect(() => {
-    fetchDocuments()
-  }, [])
+  const [file, setFile] = useState(null);
+  const [text, setText] = useState("");
+  const [summary, setSummary] = useState("");
+  const [summaries, setSummaries] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const fetchDocuments = async () => {
-    try {
-      const response = await api.get('/documents')
-      setDocuments(response.data)
-    } catch (error) {
-      console.error('Failed to fetch documents:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleFileSelect = (e) => {
-    setSelectedFile(e.target.files[0])
-  }
-
-  const handleUploadFormChange = (e) => {
-    setUploadForm({
-      ...uploadForm,
-      [e.target.name]: e.target.value
-    })
-  }
-
+  // --- Upload or summarize text ---
   const handleUpload = async (e) => {
-    e.preventDefault()
-    if (!selectedFile) return
+    e.preventDefault();
+    const formData = new FormData();
+    if (file) formData.append("file", file);
+    if (text) formData.append("text", text);
+    formData.append("username", username || "");
 
-    setUploading(true)
     try {
-      const formData = new FormData()
-      formData.append('file', selectedFile)
-      if (uploadForm.title) formData.append('title', uploadForm.title)
-      if (uploadForm.description) formData.append('description', uploadForm.description)
-      if (uploadForm.tags) formData.append('tags', uploadForm.tags)
+      setLoading(true);
+      const resp = await fetch(`${API_URL}/generate`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await resp.json();
 
-      await api.post('/documents/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      })
-
-      setSelectedFile(null)
-      setUploadForm({ title: '', description: '', tags: '' })
-      fetchDocuments()
-    } catch (error) {
-      console.error('Failed to upload document:', error)
+      if (!resp.ok) throw new Error(data.detail || JSON.stringify(data));
+      setSummary(data.summary);
+    } catch (err) {
+      console.error("❌ Summarization failed:", err);
+      alert("Summarization failed: " + err.message);
     } finally {
-      setUploading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const handleDownload = async (documentId, filename) => {
-    try {
-      const response = await api.get(`/documents/${documentId}/download`, {
-        responseType: 'blob',
+  // --- Fetch previous summaries for the user ---
+  useEffect(() => {
+    if (!username) return;
+    fetch(`${API_URL}/previous/${username}`)
+      .then((r) => r.json())
+      .then((data) => {
+        // Handle both possible shapes
+        if (Array.isArray(data)) {
+          setSummaries(data);
+        } else if (data && Array.isArray(data.summaries)) {
+          setSummaries(data.summaries);
+        } else {
+          setSummaries([]);
+        }
       })
-      
-      const url = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', filename)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-    } catch (error) {
-      console.error('Failed to download document:', error)
-    }
-  }
-
-  if (loading) {
-    return <div className="loading">Loading documents...</div>
-  }
+      .catch((err) => {
+        console.error("❌ Error fetching summaries:", err);
+        setSummaries([]);
+      });
+  }, [username]);
 
   return (
-    <div className="documents-page">
-      <div className="page-header">
-        <h1>Documents</h1>
+    <div className="documents-container">
+      <h1>Meeting Summarizer</h1>
+
+      {/* Upload & Text Input Section */}
+      <div className="upload-box">
+        <textarea
+          placeholder="Paste meeting text here..."
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        ></textarea>
+
+        <div className="file-upload">
+          <label>Or upload audio/text file:</label>
+          <input
+            type="file"
+            accept=".txt,.docx,.mp3,.wav"
+            onChange={(e) => setFile(e.target.files[0])}
+          />
+        </div>
+
+        <button onClick={handleUpload} disabled={loading}>
+          {loading ? "Summarizing..." : "Generate Summary"}
+        </button>
       </div>
 
-      <div className="upload-section">
-        <h2>Upload Document</h2>
-        <form onSubmit={handleUpload} className="upload-form">
-          <div className="form-group">
-            <label htmlFor="file">Choose File</label>
-            <input
-              type="file"
-              id="file"
-              onChange={handleFileSelect}
-              accept=".pdf,.doc,.docx,.txt,.mp3,.wav,.mp4"
-              required
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="title">Title (optional)</label>
-            <input
-              type="text"
-              id="title"
-              name="title"
-              value={uploadForm.title}
-              onChange={handleUploadFormChange}
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="description">Description (optional)</label>
-            <textarea
-              id="description"
-              name="description"
-              value={uploadForm.description}
-              onChange={handleUploadFormChange}
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="tags">Tags (comma-separated)</label>
-            <input
-              type="text"
-              id="tags"
-              name="tags"
-              value={uploadForm.tags}
-              onChange={handleUploadFormChange}
-              placeholder="important, meeting, notes"
-            />
-          </div>
-          
-          <button type="submit" disabled={uploading} className="primary-button">
-            {uploading ? 'Uploading...' : 'Upload Document'}
-          </button>
-        </form>
-      </div>
+      {/* Generated Summary */}
+      {summary && (
+        <div className="summary-box">
+          <h2>Generated Summary</h2>
+          <p>{summary}</p>
+        </div>
+      )}
 
-      <div className="documents-grid">
-        {documents.length > 0 ? (
-          documents.map((document) => (
-            <div key={document.id} className="document-card">
-              <h3>{document.title || document.original_filename}</h3>
-              <p>{document.description}</p>
-              <div className="document-info">
-                <span>Type: {document.file_type}</span>
-                <span>Size: {Math.round(document.file_size / 1024)} KB</span>
-                <span>Uploaded: {new Date(document.created_at).toLocaleDateString()}</span>
-              </div>
-              <div className="document-status">
-                <span className={`status ${document.processing_status}`}>
-                  {document.processing_status}
-                </span>
-              </div>
-              {document.tags.length > 0 && (
-                <div className="document-tags">
-                  {document.tags.map((tag, index) => (
-                    <span key={index} className="tag">{tag}</span>
-                  ))}
-                </div>
-              )}
-              <div className="document-actions">
-                <button
-                  onClick={() => handleDownload(document.id, document.original_filename)}
-                  className="secondary-button"
-                >
-                  Download
-                </button>
-              </div>
+      {/* Previous Summaries */}
+      <div className="previous-summaries">
+        <h2>Previous Summaries</h2>
+        {Array.isArray(summaries) && summaries.length > 0 ? (
+          summaries.map((s) => (
+            <div key={s._id} className="summary-card">
+              <p>{s.summary}</p>
+              <small>
+                {s.created_at
+                  ? new Date(s.created_at).toLocaleString()
+                  : "Unknown time"}
+              </small>
             </div>
           ))
         ) : (
-          <div className="no-documents">
-            <p>No documents yet. Upload your first document!</p>
-          </div>
+          <p>No previous summaries found.</p>
         )}
       </div>
     </div>
-  )
+  );
 }
 
-export default Documents
+export default Documents;
