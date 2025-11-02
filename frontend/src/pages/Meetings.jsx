@@ -1,193 +1,233 @@
-// frontend/src/pages/Meetings.jsx
+import React, { useState, useEffect } from "react";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import "./Meetings.css";
+import api from "../services/api";
 
-import React, { useState, useEffect } from 'react'
-import api from '../services/api'
+function Meetings() {
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState("");
+  const [date, setDate] = useState(new Date());
+  const [time, setTime] = useState("00:00");
+  const [duration, setDuration] = useState("");
+  const [participants, setParticipants] = useState("");
+  const [summary, setSummary] = useState("");
+  const [meetings, setMeetings] = useState([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-const Meetings = () => {
-  const [meetings, setMeetings] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showCreateForm, setShowCreateForm] = useState(false)
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    scheduled_time: '',
-    duration_minutes: 60,
-    tags: ''
-  })
-
-  useEffect(() => {
-    fetchMeetings()
-  }, [])
-
+  // ✅ Fetch all meetings
   const fetchMeetings = async () => {
     try {
-      const response = await api.get('/meetings')
-      setMeetings(response.data)
-    } catch (error) {
-      console.error('Failed to fetch meetings:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+      const res = await api.get("/api/meetings");
+      const data = res.data;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    try {
-      const meetingData = {
-        ...formData,
-        tags: formData.tags.split(',').map(tag => tag.trim()).filter(Boolean)
+      if (Array.isArray(data)) {
+        setMeetings(data);
+      } else if (data && Array.isArray(data.meetings)) {
+        setMeetings(data.meetings);
+      } else {
+        console.warn("Unexpected meetings response:", data);
+        setMeetings([]);
       }
-      await api.post('/meetings', meetingData)
-      setShowCreateForm(false)
-      setFormData({
-        title: '',
-        description: '',
-        scheduled_time: '',
-        duration_minutes: 60,
-        tags: ''
-      })
-      fetchMeetings()
-    } catch (error) {
-      console.error('Failed to create meeting:', error)
+    } catch (err) {
+      console.error("Error fetching meetings:", err);
+      setError("Failed to load meetings.");
+      setMeetings([]);
     }
-  }
+  };
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    })
-  }
+  useEffect(() => {
+    fetchMeetings();
+  }, []);
 
-  if (loading) {
-    return <div className="loading">Loading meetings...</div>
-  }
+  // ✅ Create a new meeting
+  const createMeeting = async (e) => {
+    e.preventDefault();
+    try {
+      setError("");
+      setLoading(true);
+
+      const meetingDateTime = new Date(
+        `${date.toISOString().split("T")[0]}T${time}`
+      ).toISOString();
+
+      await api.post("/api/meetings", {
+        title,
+        datetime: meetingDateTime,
+        duration: parseInt(duration),
+        participants: parseInt(participants),
+        summary,
+      });
+
+      // Reset form
+      setTitle("");
+      setDate(new Date());
+      setTime("00:00");
+      setDuration("");
+      setParticipants("");
+      setSummary("");
+      setShowForm(false);
+
+      fetchMeetings();
+    } catch (err) {
+      console.error("createMeeting:", err);
+      setError("Error creating meeting. Please check backend connection.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ Mark meeting as done
+  const markAsDone = async (id) => {
+    try {
+      await api.put(`/api/meetings/${id}/done`);
+      fetchMeetings();
+    } catch (err) {
+      console.error("Error marking done:", err);
+      setError("Failed to update meeting status.");
+    }
+  };
+
+  // ✅ Delete meeting
+  const deleteMeeting = async (id) => {
+    const confirmDelete = window.confirm("Are you sure you want to delete this meeting?");
+    if (!confirmDelete) return;
+
+    try {
+      await api.delete(`/api/meetings/${id}`);
+      setMeetings(meetings.filter((m) => m._id !== id && m.id !== id));
+    } catch (err) {
+      console.error("Error deleting meeting:", err);
+      alert("Failed to delete meeting.");
+    }
+  };
 
   return (
-    <div className="meetings-page">
-      <div className="page-header">
-        <h1>Meetings</h1>
-        <button 
-          onClick={() => setShowCreateForm(true)}
-          className="primary-button"
-        >
-          Create Meeting
-        </button>
-      </div>
+    <div className="meetings-container">
+      <h2>Schedule & Manage Meetings</h2>
 
-      {showCreateForm && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h2>Create New Meeting</h2>
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label htmlFor="title">Title</label>
-                <input
-                  type="text"
-                  id="title"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-              
-              <div className="form-group">
-                <label htmlFor="description">Description</label>
-                <textarea
-                  id="description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                />
-              </div>
-              
-              <div className="form-group">
-                <label htmlFor="scheduled_time">Scheduled Time</label>
-                <input
-                  type="datetime-local"
-                  id="scheduled_time"
-                  name="scheduled_time"
-                  value={formData.scheduled_time}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-              
-              <div className="form-group">
-                <label htmlFor="duration_minutes">Duration (minutes)</label>
-                <input
-                  type="number"
-                  id="duration_minutes"
-                  name="duration_minutes"
-                  value={formData.duration_minutes}
-                  onChange={handleChange}
-                  min="15"
-                />
-              </div>
-              
-              <div className="form-group">
-                <label htmlFor="tags">Tags (comma-separated)</label>
-                <input
-                  type="text"
-                  id="tags"
-                  name="tags"
-                  value={formData.tags}
-                  onChange={handleChange}
-                  placeholder="important, team, planning"
-                />
-              </div>
-              
-              <div className="modal-actions">
-                <button type="submit" className="primary-button">
-                  Create Meeting
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setShowCreateForm(false)}
-                  className="secondary-button"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {!showForm && (
+        <button className="create-btn" onClick={() => setShowForm(true)}>
+          Add New Meeting
+        </button>
       )}
 
-      <div className="meetings-grid">
-        {meetings.length > 0 ? (
-          meetings.map((meeting) => (
-            <div key={meeting.id} className="meeting-card">
-              <h3>{meeting.title}</h3>
-              <p>{meeting.description}</p>
+      {showForm && (
+        <form className="meeting-form" onSubmit={createMeeting}>
+          <button
+            type="button"
+            className="close-btn"
+            onClick={() => setShowForm(false)}
+          >
+            Close
+          </button>
+
+          <input
+            type="text"
+            placeholder="Meeting Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+          />
+
+          <label>Date</label>
+          <DatePicker
+            selected={date}
+            onChange={(d) => setDate(d)}
+            dateFormat="yyyy-MM-dd"
+            className="date-picker"
+            required
+          />
+
+          <label>Time</label>
+          <input
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            required
+          />
+
+          <input
+            type="number"
+            placeholder="Duration (minutes)"
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+            required
+          />
+
+          <input
+            type="number"
+            placeholder="Participants"
+            value={participants}
+            onChange={(e) => setParticipants(e.target.value)}
+            required
+          />
+
+          <textarea
+            placeholder="Summary"
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+          />
+
+          {error && <p className="error">{error}</p>}
+
+          <div className="btn-row">
+            <button type="submit" className="create-btn" disabled={loading}>
+              {loading ? "Creating..." : "Create"}
+            </button>
+            <button
+              type="button"
+              className="cancel-btn"
+              onClick={() => setShowForm(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="meeting-list">
+        {meetings.length === 0 ? (
+          <p>No meetings yet. Create one using Add new meeting.</p>
+        ) : (
+          meetings.map((m) => (
+            <div key={m._id || m.id} className="meeting-card">
               <div className="meeting-info">
-                <span>Date: {new Date(meeting.scheduled_time).toLocaleDateString()}</span>
-                <span>Time: {new Date(meeting.scheduled_time).toLocaleTimeString()}</span>
-                <span>Duration: {meeting.duration_minutes} min</span>
+                <h3>{m.title}</h3>
+                <p>
+                  <b>Date:</b> {new Date(m.datetime).toLocaleString()}
+                </p>
+                <p>
+                  <b>Duration:</b> {m.duration} mins |{" "}
+                  <b>Participants:</b> {m.participants}
+                </p>
+                <p>
+                  <b>Status:</b>{" "}
+                  {m.is_done ? (
+                    <span className="done">Done</span>
+                  ) : (
+                    <button
+                      onClick={() => markAsDone(m._id || m.id)}
+                      className="done-btn"
+                    >
+                      Mark as Done
+                    </button>
+                  )}
+                </p>
               </div>
-              <div className="meeting-status">
-                <span className={`status ${meeting.status}`}>
-                  {meeting.status}
-                </span>
-              </div>
-              {meeting.tags.length > 0 && (
-                <div className="meeting-tags">
-                  {meeting.tags.map((tag, index) => (
-                    <span key={index} className="tag">{tag}</span>
-                  ))}
-                </div>
-              )}
+              <button
+                className="delete-btn"
+                onClick={() => deleteMeeting(m._id || m.id)}
+              >
+                Delete
+              </button>
             </div>
           ))
-        ) : (
-          <div className="no-meetings">
-            <p>No meetings yet. Create your first meeting!</p>
-          </div>
         )}
       </div>
     </div>
-  )
+  );
 }
 
-export default Meetings
+export default Meetings;

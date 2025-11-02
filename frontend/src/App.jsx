@@ -11,6 +11,7 @@ import Meetings from './pages/Meetings'
 import Documents from './pages/Documents'
 import Profile from './pages/Profile'
 import './App.css'
+import History from './pages/History';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -60,6 +61,7 @@ function AppContent() {
               <Documents />
             </ProtectedRoute>
           } />
+          <Route path="/history" element={<History />} />
           <Route path="/profile" element={
             <ProtectedRoute>
               <Profile />

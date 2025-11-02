@@ -1,217 +1,193 @@
-# backend/app/routers/meetings.py
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List, Optional
-from bson import ObjectId
+from fastapi import APIRouter, HTTPException, Path
+from pydantic import BaseModel
 from datetime import datetime
-
-from app.database import get_meetings_collection, get_users_collection
-from app.models.meeting import MeetingCreate, MeetingUpdate, MeetingResponse, Meeting, MeetingStatus, Participant
-from app.models.user import User
-from app.routers.auth import get_current_user
+from bson import ObjectId
+from typing import Optional, List, Union
+from ..database import get_meetings_collection
 
 router = APIRouter()
 
-@router.post("/", response_model=MeetingResponse)
-async def create_meeting(
-    meeting: MeetingCreate,
-    current_user: User = Depends(get_current_user)
-):
-    """Create a new meeting"""
-    meetings_collection = get_meetings_collection()
-    users_collection = get_users_collection()
-    
-    # Validate participant user IDs
-    participants = []
-    for user_id in meeting.participants:
-        if not ObjectId.is_valid(user_id):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid user ID: {user_id}"
-            )
-        
-        user = await users_collection.find_one({"_id": ObjectId(user_id)})
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User not found: {user_id}"
-            )
-        
-        participants.append(Participant(
-            user_id=str(user["_id"]),
-            username=user["username"],
-            email=user["email"]
-        ))
-    
-    # Create meeting document
-    meeting_dict = {
-        "title": meeting.title,
-        "description": meeting.description,
-        "organizer_id": str(current_user["_id"]),
-        "participants": [p.dict() for p in participants],
-        "scheduled_time": meeting.scheduled_time,
-        "duration_minutes": meeting.duration_minutes,
-        "status": MeetingStatus.SCHEDULED,
-        "tags": meeting.tags,
-        "action_items": [],
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow()
+# -----------------------------
+# ✅ Flexible models for MongoDB
+# -----------------------------
+class MeetingCreate(BaseModel):
+    title: str
+    datetime: str
+    duration: Optional[int] = 0
+    participants: Union[int, str, List[str], None] = 0
+    summary: Optional[str] = ""
+
+
+class MeetingOut(BaseModel):
+    id: str
+    title: str
+    datetime: str
+    duration: int
+    participants: Union[int, str, List[str], None]
+    summary: Optional[str]
+    is_done: bool = False
+
+
+# -----------------------------
+# ✅ Serializer handles Mongo types safely
+# -----------------------------
+def serialize_meeting(meeting) -> dict:
+    participants = meeting.get("participants", 0)
+    # Normalize participants field
+    if isinstance(participants, str) and participants.isdigit():
+        participants = int(participants)
+    elif isinstance(participants, list):
+        participants = [str(p) for p in participants]
+    elif not isinstance(participants, (int, str, list)):
+        participants = 0
+
+    dt = meeting.get("datetime")
+    if isinstance(dt, datetime):
+        dt_str = dt.isoformat()
+    else:
+        dt_str = str(dt)
+
+    return {
+        "id": str(meeting.get("_id")),
+        "title": meeting.get("title", ""),
+        "datetime": dt_str,
+        "duration": meeting.get("duration", 0),
+        "participants": participants,
+        "summary": meeting.get("summary", ""),
+        "is_done": meeting.get("is_done", False),
     }
-    
-    result = await meetings_collection.insert_one(meeting_dict)
-    
-    # Get the created meeting
-    created_meeting = await meetings_collection.find_one({"_id": result.inserted_id})
-    return MeetingResponse(**created_meeting, id=str(created_meeting["_id"]))
 
-@router.get("/", response_model=List[MeetingResponse])
-async def get_meetings(
-    skip: int = 0,
-    limit: int = 50,
-    status: Optional[MeetingStatus] = None,
-    current_user: User = Depends(get_current_user)
-):
-    """Get meetings for current user"""
-    meetings_collection = get_meetings_collection()
-    
-    # Filter for meetings where user is organizer or participant
-    user_id_str = str(current_user["_id"])
-    filter_query = {
-        "$or": [
-            {"organizer_id": user_id_str},
-            {"participants.user_id": user_id_str}
-        ]
-    }
-    
-    if status:
-        filter_query["status"] = status
-    
-    cursor = meetings_collection.find(filter_query).sort("scheduled_time", -1).skip(skip).limit(limit)
-    meetings = []
-    async for meeting in cursor:
-        meetings.append(MeetingResponse(**meeting, id=str(meeting["_id"])))
-    
-    return meetings
 
-@router.get("/{meeting_id}", response_model=MeetingResponse)
-async def get_meeting(
-    meeting_id: str,
-    current_user: User = Depends(get_current_user)
-):
-    """Get meeting by ID"""
-    if not ObjectId.is_valid(meeting_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid meeting ID"
-        )
-    
-    meetings_collection = get_meetings_collection()
-    meeting = await meetings_collection.find_one({"_id": ObjectId(meeting_id)})
-    
-    if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found"
-        )
-    
-    # Check if user has access to this meeting
-    user_id_str = str(current_user["_id"])
-    if (meeting["organizer_id"] != user_id_str and 
-        not any(p["user_id"] == user_id_str for p in meeting.get("participants", []))):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this meeting"
-        )
-    
-    return MeetingResponse(**meeting, id=str(meeting["_id"]))
+# -----------------------------
+# ✅ Routes
+# -----------------------------
+from datetime import datetime, timezone, timedelta
 
-@router.put("/{meeting_id}", response_model=MeetingResponse)
-async def update_meeting(
-    meeting_id: str,
-    meeting_update: MeetingUpdate,
-    current_user: User = Depends(get_current_user)
-):
-    """Update meeting (organizer only)"""
-    if not ObjectId.is_valid(meeting_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid meeting ID"
-        )
-    
+@router.post("/meetings", response_model=MeetingOut)
+async def create_meeting(meeting: MeetingCreate):
     meetings_collection = get_meetings_collection()
-    meeting = await meetings_collection.find_one({"_id": ObjectId(meeting_id)})
-    
-    if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found"
-        )
-    
-    # Check if user is organizer
-    if meeting["organizer_id"] != str(current_user["_id"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only meeting organizer can update the meeting"
-        )
-    
-    # Prepare update data
-    update_data = {"updated_at": datetime.utcnow()}
-    
-    if meeting_update.title is not None:
-        update_data["title"] = meeting_update.title
-    if meeting_update.description is not None:
-        update_data["description"] = meeting_update.description
-    if meeting_update.scheduled_time is not None:
-        update_data["scheduled_time"] = meeting_update.scheduled_time
-    if meeting_update.duration_minutes is not None:
-        update_data["duration_minutes"] = meeting_update.duration_minutes
-    if meeting_update.status is not None:
-        update_data["status"] = meeting_update.status
-    if meeting_update.transcript is not None:
-        update_data["transcript"] = meeting_update.transcript
-    if meeting_update.summary is not None:
-        update_data["summary"] = meeting_update.summary
-    if meeting_update.action_items is not None:
-        update_data["action_items"] = meeting_update.action_items
-    if meeting_update.tags is not None:
-        update_data["tags"] = meeting_update.tags
-    
-    await meetings_collection.update_one(
-        {"_id": ObjectId(meeting_id)},
-        {"$set": update_data}
-    )
-    
-    # Get updated meeting
-    updated_meeting = await meetings_collection.find_one({"_id": ObjectId(meeting_id)})
-    return MeetingResponse(**updated_meeting, id=str(updated_meeting["_id"]))
+    data = meeting.dict()
+    print("📥 Received meeting data:", data)
 
-@router.delete("/{meeting_id}")
-async def delete_meeting(
-    meeting_id: str,
-    current_user: User = Depends(get_current_user)
-):
-    """Delete meeting (organizer only)"""
-    if not ObjectId.is_valid(meeting_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid meeting ID"
+    try:
+        dt_str = data.get("datetime", "").strip()
+        parsed_dt = None
+
+        # Parse user-sent datetime
+        for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S.%fZ"):
+            try:
+                parsed_dt = datetime.strptime(dt_str, fmt)
+                break
+            except ValueError:
+                continue
+
+        if not parsed_dt:
+            print(f"⚠️ Could not parse datetime string '{dt_str}', using current time")
+            parsed_dt = datetime.now()
+
+        # 🕒 Convert from UTC → IST (+5:30)
+        ist_offset = timedelta(hours=5, minutes=30)
+        parsed_dt = parsed_dt + ist_offset
+
+        data["datetime"] = parsed_dt
+        data["is_done"] = False
+
+        result = await meetings_collection.insert_one(data)
+        created_meeting = await meetings_collection.find_one({"_id": result.inserted_id})
+        return serialize_meeting(created_meeting)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error creating meeting: {str(e)}")
+
+
+@router.get("/meetings", response_model=List[MeetingOut])
+async def get_meetings():
+    try:
+        meetings_collection = get_meetings_collection()
+        meetings = await meetings_collection.find().sort("datetime", 1).to_list(length=None)
+        return [serialize_meeting(m) for m in meetings]
+    except Exception as e:
+        print("🔥 Error fetching meetings:", e)
+        raise HTTPException(status_code=500, detail=f"Error fetching meetings: {str(e)}")
+
+
+@router.put("/meetings/{meeting_id}/done", response_model=MeetingOut)
+async def mark_meeting_done(meeting_id: str):
+    try:
+        meetings_collection = get_meetings_collection()
+        result = await meetings_collection.update_one(
+            {"_id": ObjectId(meeting_id)},
+            {"$set": {"is_done": True}}
         )
-    
-    meetings_collection = get_meetings_collection()
-    meeting = await meetings_collection.find_one({"_id": ObjectId(meeting_id)})
-    
-    if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found"
-        )
-    
-    # Check if user is organizer
-    if meeting["organizer_id"] != str(current_user["_id"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only meeting organizer can delete the meeting"
-        )
-    
-    await meetings_collection.delete_one({"_id": ObjectId(meeting_id)})
-    return {"message": "Meeting deleted successfully"}
+        if result.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+
+        meeting = await meetings_collection.find_one({"_id": ObjectId(meeting_id)})
+        return serialize_meeting(meeting)
+
+    except Exception as e:
+        print("🔥 Error updating meeting:", e)
+        raise HTTPException(status_code=500, detail=f"Error updating meeting: {str(e)}")
+@router.get("/analytics")
+async def get_analytics():
+    """
+    Return total meetings, total summaries, and next 2 upcoming meetings.
+    Works correctly with MongoDB (counts summaries properly).
+    """
+    try:
+        meetings_collection = get_meetings_collection()
+
+        # Fetch all meetings
+        all_meetings = await meetings_collection.find().to_list(length=None)
+        total_meetings = len(all_meetings)
+
+        # If you store summaries separately:
+        from ..database import get_summaries_collection
+        summaries_collection = get_summaries_collection()
+        total_summaries = await summaries_collection.count_documents({})
+
+        # Otherwise (if summaries stored within meetings), fallback:
+        if total_summaries == 0:
+            total_summaries = sum(1 for m in all_meetings if m.get("summary"))
+
+        # Find upcoming meetings (not done + in future)
+        now = datetime.utcnow()
+        upcoming = await meetings_collection.find({
+            "is_done": False,
+            "datetime": {"$gte": now}
+        }).sort("datetime", 1).to_list(length=5)
+
+        upcoming_serialized = [serialize_meeting(m) for m in upcoming]
+
+        return {
+            "total_meetings": total_meetings,
+            "total_summaries": total_summaries,
+            "upcoming_meetings": upcoming_serialized
+        }
+
+    except Exception as e:
+        print("🔥 Error generating analytics:", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/meetings/{meeting_id}")
+async def delete_meeting(meeting_id: str = Path(..., description="Meeting ID to delete")):
+    """
+    Delete a meeting by its ID from MongoDB (supports both ObjectId and string _id).
+    """
+    try:
+        meetings_collection = get_meetings_collection()
+
+        # Try both ways — ObjectId and plain string
+        query = {"_id": ObjectId(meeting_id)} if ObjectId.is_valid(meeting_id) else {"_id": meeting_id}
+
+        result = await meetings_collection.delete_one(query)
+
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail=f"Meeting with id {meeting_id} not found")
+
+        return {"message": "Meeting deleted successfully"}
+    except Exception as e:
+        print("🔥 Error deleting meeting:", e)
+        raise HTTPException(status_code=500, detail=str(e))

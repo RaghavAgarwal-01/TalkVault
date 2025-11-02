@@ -1,0 +1,111 @@
+.history-container {
+  color: #eee;
+  padding: 20px;
+}
+
+.history-layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.history-list {
+  flex: 1;
+}
+
+.history-detail {
+  flex: 2;
+  background-color: #141414;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.08);
+}
+
+.history-ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.history-item {
+  background-color: #1a1a1a;
+  color: #ddd;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.history-item:hover {
+  background-color: #242424;
+}
+
+.history-header {
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+
+.history-preview {
+  color: #ccc;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  max-height: 3rem;
+  overflow: hidden;
+}
+
+.history-summary {
+  color: #f8f8f8;
+}
+
+.history-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.history-date {
+  font-size: 0.8rem;
+  color: #aaa;
+}
+
+.summary-text {
+  background: #1c1c1c;
+  border-radius: 8px;
+  padding: 12px;
+  color: #eaeaea;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin-bottom: 1rem;
+}
+
+.original-text {
+  background: #101010;
+  border-radius: 8px;
+  padding: 12px;
+  color: #ccc;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.download-btn {
+  background-color: #00d1d1;
+  border: none;
+  border-radius: 8px;
+  color: #000;
+  font-weight: bold;
+  padding: 0.6rem 1.2rem;
+  cursor: pointer;
+}
+
+.download-btn:hover {
+  background-color: #00ffff;
+}
+
+.placeholder-text {
+  color: #888;
+  text-align: center;
+  margin-top: 4rem;
+  font-style: italic;
+}

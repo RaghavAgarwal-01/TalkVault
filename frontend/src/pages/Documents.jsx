@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import "./Documents.css";
 import { useAuth } from "../context/AuthContext";
-import api from "../services/api"; // ✅ your configured Axios instance
+import api from "../services/api";
 
 function Documents() {
   const { user } = useAuth();
@@ -10,6 +10,7 @@ function Documents() {
   const [summary, setSummary] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [inProgress, setInProgress] = useState(false);
 
   const handleGenerate = async () => {
     if (!file && !text.trim()) {
@@ -17,39 +18,31 @@ function Documents() {
       return;
     }
 
-    setLoading(true);
     setError("");
     setSummary("");
+    setLoading(true);
+    setInProgress(true);
 
     try {
       const formData = new FormData();
+      if (file) formData.append("audio_file", file);
+      else formData.append("transcript", text);
+      if (user?.username) formData.append("username", user.username);
 
-      if (file) {
-        formData.append("audio_file", file);
-      } else {
-        formData.append("transcript", text);
-      }
-
-      const response = await api.post("/api/summarizer/generate", formData, {
+      const res = await api.post("/api/summarizer/generate", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      console.log("🧾 Full response:", response.data);
-
-      const summaryText =
-        response.data.summary || response.data.data?.summary || "";
-
-      if (summaryText) {
-        setSummary(summaryText);
-      } else {
-        console.warn("⚠️ No summary found in response:", response.data);
+      const data = res.data;
+      setSummary(data?.summary || data?.data?.summary || "");
+      if (!data?.summary && !data?.data?.summary)
         setError("No summary returned from server.");
-      }
     } catch (err) {
-      console.error("Summary generation error:", err);
+      console.error(err);
       setError("Failed to generate summary. Check console for details.");
     } finally {
       setLoading(false);
+      setInProgress(false);
     }
   };
 
@@ -60,89 +53,68 @@ function Documents() {
     setError("");
   };
 
+  const handleDownload = () => {
+    if (!summary) return;
+    const blob = new Blob([summary], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `summary_${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="documents">
+    <div className="documents-container">
       <h2>Meeting Summarizer</h2>
 
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Paste or upload meeting audio..."
-        style={{
-          width: "100%",
-          height: "150px",
-          padding: "10px",
-          borderRadius: "8px",
-          border: "1px solid #ccc",
-          backgroundColor: "#fff",
-          color: "#000",
-          fontSize: "16px",
-          marginBottom: "10px",
-        }}
+        rows={6}
       />
 
-      <input
-        type="file"
-        accept="audio/*"
-        onChange={(e) => setFile(e.target.files[0])}
-        style={{ marginBottom: "10px" }}
-      />
+      <label className="file-upload">
+        <input
+          type="file"
+          accept="audio/*"
+          onChange={(e) => setFile(e.target.files[0])}
+        />
+        {file ? file.name : "Choose File"}
+      </label>
 
-      <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-        <button
-          onClick={handleGenerate}
-          disabled={loading}
-          style={{
-            backgroundColor: "#00bcd4",
-            color: "#fff",
-            padding: "8px 16px",
-            borderRadius: "6px",
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
+      <div className="button-row">
+        <button onClick={handleGenerate} disabled={loading}>
           {loading ? "Generating..." : "Generate Summary"}
         </button>
-        <button
-          onClick={handleReset}
-          style={{
-            backgroundColor: "#555",
-            color: "#fff",
-            padding: "8px 16px",
-            borderRadius: "6px",
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
-          Reset
-        </button>
-      </div>
-
-      {error && <p style={{ color: "red" }}>{error}</p>}
-
-      <div className="summary-box">
-        <h3>Generated Summary:</h3>
-        {loading ? (
-          <p>Generating summary...</p>
-        ) : summary ? (
-          <textarea
-            readOnly
-            value={summary}
-            style={{
-              width: "100%",
-              height: "200px",
-              padding: "10px",
-              borderRadius: "8px",
-              border: "1px solid #ccc",
-              backgroundColor: "#fff",
-              color: "#000",
-              fontSize: "16px",
-            }}
-          />
-        ) : (
-          <p style={{ color: "#888" }}>Your summary will appear here...</p>
+        <button onClick={handleReset}>Reset</button>
+        {summary && (
+          <button onClick={handleDownload}>Download Summary</button>
         )}
       </div>
+
+      {error && <div className="error-message">{error}</div>}
+
+      <div
+        className={`summary-box ${!summary ? "empty" : ""}`}
+        style={{
+          transition: "all 0.3s ease",
+          opacity: loading ? 0.6 : 1,
+        }}
+      >
+        {summary ? (
+          <pre className="summary-text">{summary}</pre>
+        ) : (
+          <div className="placeholder">No summary yet.</div>
+        )}
+      </div>
+
+      {inProgress && (
+        <div className="progress-bar">
+          <div className="bar"></div>
+        </div>
+      )}
     </div>
   );
 }

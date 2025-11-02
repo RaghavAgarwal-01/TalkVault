@@ -42,8 +42,15 @@ const Navbar = () => {
           >
             Documents
           </Link>
+          <Link 
+              to="/history" 
+              className={`nav-link ${isActive('/history') ? 'active' : ''}`}
+              style={{ marginLeft: 8 }}
+            >
+              History
+            </Link>
         </div>
-
+        
         <div className="nav-user">
           <Link 
             to="/profile" 

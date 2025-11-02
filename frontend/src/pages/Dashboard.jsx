@@ -1,112 +1,94 @@
-// frontend/src/pages/Dashboard.jsx
-
-import React, { useState, useEffect } from 'react'
-import { useAuth } from '../context/AuthContext'
-import api from '../services/api'
+import React, { useEffect, useState } from "react";
+import { useAuth } from "../context/AuthContext";
+import { useNavigate } from "react-router-dom";
+import api from "../services/api";
+import "./Dashboard.css";
 
 const Dashboard = () => {
-  const { user } = useAuth()
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
-    meetings: 0,
-    documents: 0,
-    recentMeetings: [],
-    recentDocuments: []
-  })
-  const [loading, setLoading] = useState(true)
+    total_meetings: 0,
+    total_summaries: 0,
+    upcoming_meetings: [],
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    fetchDashboardData()
-  }, [])
+    const load = async () => {
+      setLoading(true);
+      try {
+        const res = await api.get("/api/analytics");
+        setStats(res.data || {});
+      } catch (e) {
+        console.error(e);
+        setError(
+          e?.response?.data?.detail || e.message || "Failed to load analytics"
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [user]);
 
-  const fetchDashboardData = async () => {
-    try {
-      const [meetingsRes, documentsRes] = await Promise.all([
-        api.get('/meetings?limit=5'),
-        api.get('/documents?limit=5')
-      ])
-      
-      setStats({
-        meetings: meetingsRes.data.length,
-        documents: documentsRes.data.length,
-        recentMeetings: meetingsRes.data,
-        recentDocuments: documentsRes.data
-      })
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const goToSummaries = () => navigate("/history");
+  const goToMeetings = () => navigate("/meetings");
 
-  if (loading) {
-    return <div className="loading">Loading dashboard...</div>
-  }
+  if (loading) return <div className="dashboard">Loading analytics...</div>;
+  if (error) return <div className="dashboard error">Error: {error}</div>;
 
   return (
     <div className="dashboard">
-      <div className="dashboard-header">
-        <h1>Welcome back, {user?.full_name || user?.username}!</h1>
-        <p>Here's what's happening with your meetings and documents.</p>
-      </div>
-
-      <div className="dashboard-stats">
-        <div className="stat-card">
-          <h3>Total Meetings</h3>
-          <div className="stat-number">{stats.meetings}</div>
+      <h2>Analytics & Insights</h2>
+      <div className="cards">
+        <div
+          className="card"
+          onClick={goToMeetings}
+          style={{ cursor: "pointer" }}
+        >
+          <h3>Total meetings</h3>
+          <p className="big-number">{stats.total_meetings ?? 0}</p>
+          <small>Click to view all meetings</small>
         </div>
-        <div className="stat-card">
-          <h3>Total Documents</h3>
-          <div className="stat-number">{stats.documents}</div>
-        </div>
-      </div>
 
-      <div className="dashboard-content">
-        <div className="dashboard-section">
-          <h2>Recent Meetings</h2>
-          {stats.recentMeetings.length > 0 ? (
-            <div className="items-list">
-              {stats.recentMeetings.map((meeting) => (
-                <div key={meeting.id} className="item-card">
-                  <h4>{meeting.title}</h4>
-                  <p>{meeting.description}</p>
-                  <span className="item-date">
-                    {new Date(meeting.scheduled_time).toLocaleDateString()}
-                  </span>
-                  <span className={`status ${meeting.status}`}>
-                    {meeting.status}
-                  </span>
-                </div>
+        <div
+          className="card"
+          onClick={goToSummaries}
+          style={{ cursor: "pointer" }}
+        >
+          <h3>Total summaries</h3>
+          <p className="big-number">{stats.total_summaries ?? 0}</p>
+          <small>Click to open history</small>
+        </div>
+
+        <div className="card">
+          <h3>Upcoming meetings</h3>
+          {stats.upcoming_meetings && stats.upcoming_meetings.length ? (
+            <ul className="upcoming-list">
+              {stats.upcoming_meetings.map((m) => (
+                <li
+                  key={m.id}
+                  onClick={() => navigate(`/meetings?open=${m.id}`)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <strong>{m.title}</strong>
+                  <div className="muted">
+                    {m.datetime
+                      ? new Date(m.datetime).toLocaleString()
+                      : "No date"}
+                  </div>
+                </li>
               ))}
-            </div>
+            </ul>
           ) : (
-            <p className="no-items">No recent meetings</p>
-          )}
-        </div>
-
-        <div className="dashboard-section">
-          <h2>Recent Documents</h2>
-          {stats.recentDocuments.length > 0 ? (
-            <div className="items-list">
-              {stats.recentDocuments.map((document) => (
-                <div key={document.id} className="item-card">
-                  <h4>{document.title || document.original_filename}</h4>
-                  <p>{document.description}</p>
-                  <span className="item-date">
-                    {new Date(document.created_at).toLocaleDateString()}
-                  </span>
-                  <span className={`status ${document.processing_status}`}>
-                    {document.processing_status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="no-items">No recent documents</p>
+            <div>No upcoming meetings</div>
           )}
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Dashboard
+export default Dashboard;

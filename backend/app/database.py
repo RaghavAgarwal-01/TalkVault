@@ -1,21 +1,20 @@
-from pymongo import MongoClient
-from dotenv import load_dotenv
-import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.collection import Collection
+from dotenv import load_dotenv
+import os
 
-MONGO_URI = "mongodb://localhost:27017"
-DB_NAME = "talkvault"
-
-client: AsyncIOMotorClient | None = None
-db = None
-
+# ✅ Load environment variables
 load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+DB_NAME = os.getenv("DB_NAME", "talkvault")
 
-client = MongoClient(MONGO_URI)
-db = client["talkvault"]
+# Global client and db
+client: AsyncIOMotorClient | None = None
+db = None
+
+
+# ✅ Connect to MongoDB
 async def connect_to_mongo():
     global client, db
     client = AsyncIOMotorClient(MONGO_URI)
@@ -31,28 +30,23 @@ async def close_mongo_connection():
         print("❌ MongoDB connection closed")
 
 
-# ✅ Get documents collection
-def get_documents_collection() -> Collection:
+# ✅ "get_db" — for compatibility with routers expecting a DB dependency
+def get_db():
     global db
     if db is None:
-        raise RuntimeError("Database connection not initialized. Call connect_to_mongo() first.")
-    return db["documents"]
-def get_users_collection():
-    if db is None:
-        raise ConnectionError("❌ MongoDB not connected yet.")
-    return db["users"]
+        raise ConnectionError("❌ MongoDB not connected yet. Call connect_to_mongo() first.")
+    return db
 
-def get_meetings_collection():
-    if db is None:
-        raise ConnectionError("❌ MongoDB not connected yet.")
-    return db["meetings"]
 
-def get_documents_collection():
-    if db is None:
-        raise ConnectionError("❌ MongoDB not connected yet.")
-    return db["documents"]
+# ✅ Collection getters
+def get_users_collection() -> Collection:
+    return get_db()["users"]
 
-def get_summaries_collection():
-    if db is None:
-        raise ConnectionError("❌ MongoDB not connected yet.")
-    return db["summaries"]
+def get_meetings_collection() -> Collection:
+    return get_db()["meetings"]
+
+def get_documents_collection() -> Collection:
+    return get_db()["documents"]
+
+def get_summaries_collection() -> Collection:
+    return get_db()["summaries"]
